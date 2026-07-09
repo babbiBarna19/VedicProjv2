@@ -189,7 +189,7 @@ select option{background:#180838;color:var(--text);}
     </div>
     <div class="form-group" style="margin-top:1.2rem;">
       <label>Place of Birth <button type="button" class="detect-btn" id="detect-btn" onclick="detectLocation()">📍 Detect my location</button></label>
-      <input type="text" id="inp-place" placeholder="e.g. Manila, Philippines">
+      <input type="text" id="inp-place" placeholder="e.g. New Delhi, India">
       <div id="detect-status" class="detect-status"></div>
     </div>
     <div class="form-group">
@@ -978,7 +978,7 @@ async function submitForm() {
   } catch(e) {
     stopLoading();
     showScreen('form-screen');
-    errEl.textContent = 'Could not find that place — try being more specific (e.g. "Manila, Philippines").';
+    errEl.textContent = 'Could not find that place — try being more specific (e.g. "Puri, Odisha, India").';
     console.error(e);
   } finally {
     document.querySelector('.btn').disabled = false;
@@ -990,87 +990,86 @@ document.addEventListener('keydown', e => {
   if (e.key==='Enter' && document.getElementById('form-screen').classList.contains('active')) submitForm();
 });
 
-// Auto-detect timezone on load
-(function() {
-  try {
-    const offsetMins = -new Date().getTimezoneOffset();
-    const offsetHours = offsetMins / 60;
+// Timezone defaults to UTC+5:30 (India/Sri Lanka) via `selected` attribute on the option.
+
+async function detectLocation() {
+  const statusEl = document.getElementById('detect-status');
+  const btn      = document.getElementById('detect-btn');
+
+  btn.textContent = '⏳ Detecting…';
+  btn.disabled = true;
+  statusEl.className = 'detect-status wait';
+  statusEl.textContent = 'Detecting location…';
+
+  function snapTz(offsetHours) {
     const tzSelect = document.getElementById('inp-tz');
     let closest = null, minDiff = Infinity;
     for (const opt of tzSelect.options) {
       const diff = Math.abs(parseFloat(opt.value) - offsetHours);
       if (diff < minDiff) { minDiff = diff; closest = opt.value; }
     }
-    if (closest !== null) tzSelect.value = closest;
-  } catch(e) {
-    document.getElementById('inp-tz').value = '8'; // fallback
+    if (closest !== null) {
+      tzSelect.value = closest;
+      document.getElementById('tz-auto-tag').style.display = 'inline';
+    }
   }
-})();
 
-async function detectLocation() {
-  const statusEl = document.getElementById('detect-status');
-  const btn      = document.getElementById('detect-btn');
+  function done(place, msg, isOk) {
+    if (place) document.getElementById('inp-place').value = place;
+    statusEl.textContent = msg;
+    statusEl.className = 'detect-status ' + (isOk ? 'ok' : 'err');
+    btn.textContent = '📍 Detect my location';
+    btn.disabled = false;
+  }
 
+  // Primary: IP-based geolocation — no permission prompt, works everywhere
+  try {
+    const res  = await fetch('https://ipapi.co/json/');
+    const data = await res.json();
+    if (data && data.city && !data.error) {
+      const place = [data.city, data.country_name].filter(Boolean).join(', ');
+      if (data.utc_offset) {
+        const sign = data.utc_offset[0] === '-' ? -1 : 1;
+        const h = parseInt(data.utc_offset.slice(1, 3), 10);
+        const m = parseInt(data.utc_offset.slice(3, 5), 10);
+        snapTz(sign * (h + m / 60));
+      }
+      done(place, `📍 ${place}`, true);
+      return;
+    }
+  } catch(e) { /* fall through to GPS */ }
+
+  // Fallback: GPS + BigDataCloud reverse geocoding (CORS-friendly, no key required)
   if (!navigator.geolocation) {
-    statusEl.textContent = 'Geolocation not supported — please type your birthplace.';
-    statusEl.className = 'detect-status err';
+    done(null, 'Location detection not supported — please type your birthplace.', false);
     return;
   }
 
-  btn.textContent = '⏳ Detecting…';
-  btn.disabled = true;
-  statusEl.textContent = 'Requesting location access…';
-  statusEl.className = 'detect-status wait';
+  statusEl.textContent = 'Requesting GPS access…';
 
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
       const {latitude: lat, longitude: lon} = pos.coords;
       statusEl.textContent = 'Located — finding city name…';
-
       try {
         const res  = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
-          {headers: {'Accept-Language': 'en'}}
+          `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`
         );
         const data = await res.json();
-        const addr = data.address || {};
-        const city    = addr.city || addr.town || addr.village || addr.county || '';
-        const country = addr.country || '';
+        const city    = data.city || data.locality || data.principalSubdivision || '';
+        const country = data.countryName || '';
         const place   = [city, country].filter(Boolean).join(', ');
-
-        document.getElementById('inp-place').value = place;
-
-        // Snap timezone dropdown to detected offset
-        const offsetHours = -new Date().getTimezoneOffset() / 60;
-        const tzSelect = document.getElementById('inp-tz');
-        let closest = null, minDiff = Infinity;
-        for (const opt of tzSelect.options) {
-          const diff = Math.abs(parseFloat(opt.value) - offsetHours);
-          if (diff < minDiff) { minDiff = diff; closest = opt.value; }
-        }
-        if (closest !== null) {
-          tzSelect.value = closest;
-          document.getElementById('tz-auto-tag').style.display = 'inline';
-        }
-
-        statusEl.textContent = `📍 ${place}`;
-        statusEl.className = 'detect-status ok';
+        snapTz(-new Date().getTimezoneOffset() / 60);
+        done(place, `📍 ${place}`, true);
       } catch(e) {
-        statusEl.textContent = 'Found your coordinates but couldn\'t get city name — please type it.';
-        statusEl.className = 'detect-status err';
+        done(null, 'Found your location but couldn\'t get city name — please type it.', false);
       }
-
-      btn.textContent = '📍 Detect my location';
-      btn.disabled = false;
     },
     (err) => {
       const msg = err.code === 1
         ? 'Location access denied — please type your birthplace.'
         : 'Could not detect location — please type it manually.';
-      statusEl.textContent = msg;
-      statusEl.className = 'detect-status err';
-      btn.textContent = '📍 Detect my location';
-      btn.disabled = false;
+      done(null, msg, false);
     },
     {timeout: 10000}
   );
