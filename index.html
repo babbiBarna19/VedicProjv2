@@ -6,6 +6,7 @@
 <title>Your Vedic Stars ✨</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☀️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 :root{
@@ -19,8 +20,8 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(150deg,#040d06 0%
 
 /* ── LAYOUT ── */
 .app-shell{display:grid;grid-template-columns:400px 1fr;min-height:100vh;}
-.left-panel{position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 1.5rem;border-right:1px solid rgba(212,175,55,.1);}
-.left-inner{width:100%;max-width:360px;}
+.left-panel{position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:2rem 1.5rem;border-right:1px solid rgba(212,175,55,.1);}
+.left-inner{width:100%;max-width:360px;margin:auto;padding:1rem 0;}
 
 /* ── BACKGROUND: stars + gold shimmer vignette ── */
 body::before{content:'';position:fixed;inset:0;background-image:
@@ -109,8 +110,12 @@ select option{background:#091c0e;color:var(--text);}
 .reading-name{font-family:'Playfair Display',serif;font-size:clamp(1.8rem,4vw,2.8rem);color:var(--gold);margin-bottom:.4rem;text-shadow:0 0 32px rgba(212,175,55,.25);}
 .reading-birth{color:var(--sage);font-size:.88rem;margin-bottom:.9rem;}
 .badge{display:inline-block;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.32);border-radius:20px;padding:.3rem 1rem;color:var(--gold);font-size:.8rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin:.2rem;}
-.back-btn{background:none;border:none;color:var(--muted);font-family:'Inter',sans-serif;font-size:.9rem;cursor:pointer;padding:.5rem 0;display:inline-flex;align-items:center;gap:.4rem;margin-bottom:.5rem;transition:color .2s;}
+.reading-actions{display:flex;align-items:center;gap:1rem;margin-bottom:.5rem;flex-wrap:wrap;}
+.back-btn{background:none;border:none;color:var(--muted);font-family:'Inter',sans-serif;font-size:.9rem;cursor:pointer;padding:.5rem 0;display:inline-flex;align-items:center;gap:.4rem;transition:color .2s;}
 .back-btn:hover{color:var(--gold);}
+.pdf-btn{background:none;border:1px solid rgba(212,175,55,.35);border-radius:10px;color:var(--gold);font-family:'Inter',sans-serif;font-size:.82rem;font-weight:600;cursor:pointer;padding:.4rem .9rem;display:inline-flex;align-items:center;gap:.4rem;transition:background .2s,box-shadow .2s;letter-spacing:.02em;margin-left:auto;}
+.pdf-btn:hover{background:rgba(212,175,55,.1);box-shadow:0 0 12px rgba(212,175,55,.2);}
+.pdf-btn:disabled{opacity:.5;cursor:not-allowed;}
 
 /* SECTION */
 .section{margin-bottom:2.8rem;}
@@ -191,7 +196,7 @@ select option{background:#091c0e;color:var(--text);}
 @media(max-width:860px){
   .app-shell{grid-template-columns:1fr;}
   .left-panel{position:relative;height:auto;border-right:none;border-bottom:1px solid rgba(212,175,55,.1);padding:2rem 1.5rem;}
-  .left-inner{max-width:500px;}
+  .left-inner{max-width:500px;margin:0 auto;padding:0;}
   .state-welcome{min-height:auto;padding:2.5rem 1.5rem;}
   .state-loading{min-height:60vh;}
   .state-reading{padding:1.5rem 1.5rem 4rem;}
@@ -324,7 +329,10 @@ select option{background:#091c0e;color:var(--text);}
 
   <!-- Reading state -->
   <div id="state-reading" class="state-reading">
-    <button class="back-btn" onclick="showState('welcome')">← New Reading</button>
+    <div class="reading-actions">
+      <button class="back-btn" onclick="showState('welcome')">← New Reading</button>
+      <button class="pdf-btn" id="pdf-btn" onclick="downloadPDF()">⬇ Download PDF</button>
+    </div>
     <div id="reading-content"></div>
   </div>
 
@@ -1009,6 +1017,39 @@ async function geocode(place) {
   return {lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), display: data[0].display_name};
 }
 
+// ── Google Sheets logging ──────────────────────────────────────────────────
+// Replace with your Apps Script deployment URL (see setup instructions below)
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwZVZvTKVVREKWOHgv6lBmi0IumbnOMMF-LUbSPaitdcUNGgaLcYsrYZ98UimpI1F5w/exec';
+
+let currentReadingName = 'Vedic Reading';
+
+function logToSheets(payload) {
+  if (SHEETS_URL === 'YOUR_APPS_SCRIPT_URL_HERE') return;
+  fetch(SHEETS_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  }).catch(() => {});
+}
+
+async function downloadPDF() {
+  const btn = document.getElementById('pdf-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+  const el  = document.getElementById('reading-content');
+  const opt = {
+    margin: [12, 14, 12, 14],
+    filename: `${currentReadingName.replace(/\s+/g,'_')}_Vedic_Reading.pdf`,
+    image: {type:'jpeg', quality:.96},
+    html2canvas: {scale:2, useCORS:true, backgroundColor:'#040d06', logging:false},
+    jsPDF: {unit:'mm', format:'a4', orientation:'portrait'}
+  };
+  await html2pdf().set(opt).from(el).save();
+  btn.disabled = false;
+  btn.textContent = '⬇ Download PDF';
+}
+
 async function submitForm() {
   const errEl = document.getElementById('form-error');
   errEl.textContent = '';
@@ -1053,8 +1094,21 @@ async function submitForm() {
         <span class="badge">${chart.moonNak}</span>
       </div>`;
 
+    currentReadingName = name;
     document.getElementById('reading-content').innerHTML = header + readingHTML;
     showState('reading');
+
+    // Log submission to Google Sheets (silent, non-blocking)
+    logToSheets({
+      timestamp: new Date().toISOString(),
+      name, dob: dateV,
+      time: timeUnknown ? 'unknown' : timeV,
+      place, timezone: tz,
+      lagna: chart.lagnaSignName,
+      moon: SIGNS[chart.planets.Moon.sign],
+      nakshatra: chart.moonNak
+    });
+
   } catch(e) {
     stopLoading();
     showState('welcome');
