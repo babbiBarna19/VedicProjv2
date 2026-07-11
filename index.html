@@ -62,6 +62,7 @@ input:focus,select:focus{border-color:rgba(176,141,79,.6);background:rgba(255,25
 input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webkit-calendar-picker-indicator{filter:invert(.35) sepia(.4) hue-rotate(60deg) opacity(.75);cursor:pointer;}
 select option{background:#fffdf8;color:var(--text);}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}.row2>*{min-width:0;}
+.row3{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:.5rem;}.row3>*{min-width:0;}
 .time-unknown-row{display:flex;align-items:center;gap:.5rem;margin-top:.5rem;}
 .time-unknown-row input[type=checkbox]{width:auto;cursor:pointer;accent-color:var(--gold);}
 .time-unknown-row label{text-transform:none;letter-spacing:0;font-size:.85rem;color:var(--muted);margin:0;cursor:pointer;}
@@ -234,15 +235,25 @@ select option{background:#fffdf8;color:var(--text);}
       <label>Your Name</label>
       <input type="text" id="inp-name" placeholder="Enter your name" autocomplete="given-name">
     </div>
-    <div class="row2">
-      <div class="form-group">
-        <label>Date of Birth</label>
-        <input type="date" id="inp-date">
+    <div class="form-group">
+      <label>Date of Birth</label>
+      <div class="row3">
+        <select id="inp-day" onchange="updateDays()"><option value="">Day</option></select>
+        <select id="inp-month" onchange="updateDays()">
+          <option value="">Month</option>
+          <option value="1">January</option><option value="2">February</option>
+          <option value="3">March</option><option value="4">April</option>
+          <option value="5">May</option><option value="6">June</option>
+          <option value="7">July</option><option value="8">August</option>
+          <option value="9">September</option><option value="10">October</option>
+          <option value="11">November</option><option value="12">December</option>
+        </select>
+        <select id="inp-year" onchange="updateDays()"><option value="">Year</option></select>
       </div>
-      <div class="form-group">
-        <label>Time of Birth</label>
-        <input type="time" id="inp-time" value="12:00">
-      </div>
+    </div>
+    <div class="form-group">
+      <label>Time of Birth</label>
+      <input type="time" id="inp-time" value="12:00">
     </div>
     <div class="time-unknown-row">
       <input type="checkbox" id="time-unknown">
@@ -1052,21 +1063,49 @@ async function downloadPDF() {
   btn.textContent = '⬇ Download PDF';
 }
 
+// ── Date dropdowns ────────────────────────────────────────────────────────
+(function initDateDropdowns() {
+  const currentYear = new Date().getFullYear();
+  const yearSel = document.getElementById('inp-year');
+  for (let y = currentYear; y >= 1920; y--) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    yearSel.appendChild(opt);
+  }
+  updateDays();
+})();
+
+function updateDays() {
+  const month  = parseInt(document.getElementById('inp-month').value) || 0;
+  const year   = parseInt(document.getElementById('inp-year').value)  || 2000;
+  const daySel = document.getElementById('inp-day');
+  const prev   = parseInt(daySel.value) || 0;
+  const maxDay = month ? new Date(year, month, 0).getDate() : 31;
+  daySel.innerHTML = '<option value="">Day</option>';
+  for (let d = 1; d <= maxDay; d++) {
+    const opt = document.createElement('option');
+    opt.value = d; opt.textContent = d;
+    if (d === prev) opt.selected = true;
+    daySel.appendChild(opt);
+  }
+}
+
 async function submitForm() {
   const errEl = document.getElementById('form-error');
   errEl.textContent = '';
 
   const name  = document.getElementById('inp-name').value.trim() || 'You';
-  const dateV = document.getElementById('inp-date').value;
+  const day   = parseInt(document.getElementById('inp-day').value)   || 0;
+  const month = parseInt(document.getElementById('inp-month').value) || 0;
+  const year  = parseInt(document.getElementById('inp-year').value)  || 0;
   const timeV = document.getElementById('inp-time').value;
   const place = document.getElementById('inp-place').value.trim();
   const tz    = parseFloat(document.getElementById('inp-tz').value);
   const timeUnknown = document.getElementById('time-unknown').checked;
 
-  if (!dateV) { errEl.textContent = 'Please enter your date of birth.'; return; }
-  if (!place)  { errEl.textContent = 'Please enter your place of birth.'; return; }
-
-  const [year, month, day] = dateV.split('-').map(Number);
+  if (!day || !month || !year) { errEl.textContent = 'Please select your full date of birth.'; return; }
+  if (!place) { errEl.textContent = 'Please enter your place of birth.'; return; }
+  const dateV = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
   let hour = 12;
   if (!timeUnknown && timeV) {
     const [h, m] = timeV.split(':').map(Number);
